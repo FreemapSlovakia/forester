@@ -5,9 +5,6 @@ import { assureSuccess } from "./util.ts";
 // const bbox = [-253793.51, -1206785.32, -253182.48, -1206227.1];
 // const bbox = [-368567.841717, -1233031.480147, -352016.373599, -1219169.419783];
 
-// meta file was created with the following command:
-// find /home/martin/14TB -name '*_jtsk03_bpv.laz' | parallel "echo {}; pdal info --summary {} | jq -c" > lazfiles.meta.jsonl
-
 const metas = (await Deno.readTextFile("./lazfiles.meta.jsonl"))
   .trim()
   .split("\n")
