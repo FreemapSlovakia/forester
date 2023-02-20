@@ -25,7 +25,7 @@ const classifications = [3, 4, 5, 6, 9];
 
 const bounds = metas.reduce(
   (
-    a,
+    bbox,
     {
       summary: {
         bounds: { minx, miny, maxx, maxy },
@@ -33,10 +33,10 @@ const bounds = metas.reduce(
     }
   ) =>
     [
-      Math.min(a[0], minx),
-      Math.min(a[1], miny),
-      Math.max(a[2], maxx),
-      Math.max(a[3], maxy),
+      Math.min(bbox[0], minx),
+      Math.min(bbox[1], miny),
+      Math.max(bbox[2], maxx),
+      Math.max(bbox[3], maxy),
     ] satisfies BBox,
   [Infinity, Infinity, -Infinity, -Infinity] satisfies BBox
 );
