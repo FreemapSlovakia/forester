@@ -79,7 +79,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
     //     crs: {
     //       type: "name",
     //       properties: {
-    //         name: "urn:ogc:def:crs:EPSG::3857",
+    //         name: "urn:ogc:def:crs:EPSG::8353",
     //       },
     //     },
     //     properties: { id: index },
