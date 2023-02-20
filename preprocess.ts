@@ -2,13 +2,26 @@ import * as path from "https://deno.land/std@0.171.0/path/mod.ts";
 import PQueue from "https://esm.sh/p-queue@7.3.0/";
 import { assureSuccess } from "./util.ts";
 
-// const bbox = [-253793.51, -1206785.32, -253182.48, -1206227.1];
-// const bbox = [-368567.841717, -1233031.480147, -352016.373599, -1219169.419783];
+type Meta = {
+  filename: string;
+  summary: {
+    bounds: {
+      minx: number;
+      miny: number;
+      maxx: number;
+      maxy: number;
+    };
+  };
+};
 
-const metas = (await Deno.readTextFile("./lazfiles.meta.jsonl"))
+type BBox = [number, number, number, number];
+
+const metas: Meta[] = (await Deno.readTextFile("./lazfiles.meta.jsonl"))
   .trim()
   .split("\n")
   .map((line) => JSON.parse(line));
+
+const classifications = [3, 4, 5, 6, 9];
 
 const bounds = metas.reduce(
   (
@@ -18,43 +31,48 @@ const bounds = metas.reduce(
         bounds: { minx, miny, maxx, maxy },
       },
     }
-  ) => [
-    Math.min(a[0], minx),
-    Math.min(a[1], miny),
-    Math.max(a[2], maxx),
-    Math.max(a[3], maxy),
-  ],
-  [Infinity, Infinity, -Infinity, -Infinity]
+  ) =>
+    [
+      Math.min(a[0], minx),
+      Math.min(a[1], miny),
+      Math.max(a[2], maxx),
+      Math.max(a[3], maxy),
+    ] satisfies BBox,
+  [Infinity, Infinity, -Infinity, -Infinity] satisfies BBox
 );
 
 let i = 0;
 
-const dx = (bounds[2] - bounds[0]) / 100;
+const dx = (bounds[2] - bounds[0]) / 160;
 
-const dy = (bounds[3] - bounds[1]) / 100;
+const dy = (bounds[3] - bounds[1]) / 80;
 
 const workers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
-const q = new PQueue({
-  concurrency: 3,
+const queue = new PQueue({
+  concurrency: 16,
 });
 
 for (let y = bounds[1]; y < bounds[3]; y += dy) {
   for (let x = bounds[0]; x < bounds[2]; x += dx) {
-    console.log(`Tile: ${++i}`);
+    const index = ++i;
 
-    if (
-      ![
-        4158, 4341, 4441, 4442, 4443, 4532, 4541, 4542, 4543, 4642, 4742, 4835,
-        4842, 4934, 4936, 5459, 5460, 5461, 5643, 5843, 7045, 7132, 7232, 7233,
-        7248, 7332, 7333, 7334, 7435, 7436, 7536, 7552, 7837, 8139, 8140, 8455,
-        8556, 8648, 9154, 9255, 9256, 9357, 9358,
-      ].includes(i)
-    ) {
-      continue;
-    }
+    console.log(`Tile ${index}`);
 
-    // create grid (geojsonl)
+    // if (
+    //   ![
+    //     2957, 2958, 2960, 2968, 2969, 2970, 2974, 2975, 2976, 2977, 4242, 4244,
+    //     4245, 4246, 4247, 4248, 4249, 4250, 4251,
+    //   ].includes(index)
+    // ) {
+    //   continue;
+    // }
+
+    // if (i < 5593) {
+    //   continue;
+    // }
+
+    // // create grid (geojsonl)
     // console.log(
     //   JSON.stringify({
     //     type: "Feature",
@@ -64,7 +82,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
     //         name: "urn:ogc:def:crs:EPSG::3857",
     //       },
     //     },
-    //     properties: { id: ++i },
+    //     properties: { id: index },
     //     geometry: {
     //       type: "Polygon",
     //       coordinates: [
@@ -82,10 +100,10 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
 
     // continue;
 
-    const finFile = `fin/binary-${String(i).padStart(5, "0")}.tif`;
+    const doneFile = `fin2/done-${String(index).padStart(5, "0")}`;
 
     try {
-      await Deno.stat(finFile);
+      await Deno.stat(doneFile);
       continue;
     } catch {
       // OK
@@ -99,9 +117,9 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
       continue;
     }
 
-    await q.onSizeLessThan(q.concurrency);
+    await queue.onSizeLessThan(queue.concurrency);
 
-    q.add(async () => {
+    queue.add(async () => {
       const id = workers.shift();
 
       try {
@@ -115,62 +133,30 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
 
         await Deno.mkdir(workdir, { recursive: true });
 
-        await filter(workdir, files, bbox);
-
-        // const numPoints = (
-        //   await Promise.all(
-        //     files.map(async (file) => {
-        //       const cmd = Deno.run({
-        //         cmd: [
-        //           "pdal",
-        //           "info",
-        //           "--summary",
-        //           // path.resolve("/home/martin/14TB", file),
-        //           workdir + "/" + path.basename(file),
-        //         ],
-        //         stdout: "piped",
-        //       });
-
-        //       const num = JSON.parse(
-        //         new TextDecoder().decode(await cmd.output())
-        //       ).summary.num_points;
-
-        //       cmd.close();
-
-        //       return num;
-        //     })
-        //   )
-        // ).reduce((a, c) => a + c, 0);
-
-        // console.log("Points", numPoints);
-
-        // if (numPoints > 400000000) {
-        //   console.log("SKIP");
-
-        //   return;
-        // }
-
-        await merge(workdir, files);
-
-        await render(workdir);
-
-        // await render2(files, bbox);
-
-        let nonEmpty = false;
+        await filter(index, workdir, files, bbox);
 
         try {
-          await Deno.stat(workdir + "/dsm.tif");
+          await render(index, workdir, files);
 
-          nonEmpty = true;
-        } catch {
-          console.log("EMPTY: " + i);
+          await Promise.all(
+            classifications.map((c) =>
+              Deno.copyFile(
+                workdir + `/binary_${c}.tif`,
+                `fin2/binary_${c}-${String(index).padStart(5, "0")}.tif`
+              ).catch(() => undefined)
+            )
+          );
+
+          (await Deno.create(doneFile)).close();
+
+          // await Deno.rename(workdir + "/binary.tif", finFile);
+        } catch (e) {
+          console.error("Tile:", index, e);
+
+          return;
         }
 
-        if (nonEmpty) {
-          await calculate(workdir);
-
-          await Deno.rename(workdir + "/binary.tif", finFile);
-        }
+        console.log(`Done ${index}`);
 
         await Deno.remove(workdir, { recursive: true });
       } finally {
@@ -199,12 +185,22 @@ function getFiles(bbox: number[]) {
   return files;
 }
 
-async function filter(workdir: string, files: string[], bbox: number[]) {
-  console.log("Filtering");
+async function filter(
+  index: number,
+  workdir: string,
+  files: string[],
+  bbox: number[]
+) {
+  console.log(`Filtering ${index}`);
+
+  const t = Date.now();
 
   await Promise.all(
     files.map((file) => {
-      const p = Deno.run({ cmd: ["pdal", "pipeline", "-s"], stdin: "piped" });
+      const p = Deno.run({
+        cmd: ["/home/martin/fm/PDAL/build/bin/pdal", "pipeline", "-s"],
+        stdin: "piped",
+      });
 
       const pipeline = [
         {
@@ -213,8 +209,7 @@ async function filter(workdir: string, files: string[], bbox: number[]) {
         },
         {
           type: "filters.range",
-          limits: "Classification[4:5]", // medium and high vegetation
-          // limits: "Classification[9:9]", // water
+          limits: "Classification[3:9]",
         },
         {
           type: "filters.crop",
@@ -230,102 +225,42 @@ async function filter(workdir: string, files: string[], bbox: number[]) {
       return assureSuccess(p);
     })
   );
-}
 
-async function merge(workdir: string, files: string[]) {
-  console.log("Merging");
-
-  await assureSuccess(
-    Deno.run({
-      //     cmd: [
-      //       "pdal",
-      //       "merge",
-      //       ...files.map((file) => workdir + "/" + path.basename(file)),
-      //       workdir + "/merged.las",
-      //     ],
-      cmd: [
-        "/home/martin/fm/LAStools/bin/lasmerge",
-        "-i",
-        ...files.map((file) => workdir + "/" + path.basename(file)),
-        "-o",
-        workdir + "/merged.las",
-      ],
-    })
+  console.log(
+    `Done filtering ${index} in ${((Date.now() - t) / 60_000).toFixed(2)}`
   );
 }
 
-async function render(workdir: string) {
-  console.log("Rendering");
+async function render(index: number, workdir: string, files: string[]) {
+  console.log(`Rendering ${index}`);
 
-  // don't fail on KILL because of fatkiller.sh
+  const t = Date.now();
 
-  await Deno.run({
-    cmd: [
-      "whitebox_tools",
-      // "--quiet",
-      "-r=LidarDigitalSurfaceModel",
-      "-v",
-      "--wd=" + workdir,
-      "-i=merged.las",
-      "-o=dsm.tif",
-      "--resolution=0.5",
-      "--max_triangle_edge_length=5",
-    ],
-  }).status();
-}
+  const p = Deno.run({
+    cmd: ["/home/martin/fm/PDAL/build/bin/pdal", "pipeline", "-s"],
+    stdin: "piped",
+  });
 
-// async function render2(files: string[], bbox: number[]) {
-//   console.log("Rendering");
+  const pipeline = [
+    ...files.map((file) => workdir + "/" + path.basename(file)),
+    ...classifications.map((c) => ({
+      type: "writers.gdal",
+      resolution: 0.5,
+      filename: workdir + `/binary_${c}.tif`,
+      gdalopts: "COMPRESS=DEFLATE,PREDICTOR=2,ZLEVEL=5",
+      output_type: "count",
+      data_type: "uint16",
+      where: `(Classification == ${c})`,
+    })),
+  ];
 
-//   const cmd = [
-//     "wine",
-//     "/media/martin/OSM/LAStools/bin/las2dem.exe",
-//     "-extra_pass",
-//     // "-last_only",
-//     "-kill",
-//     "1",
-//     "-step",
-//     "0.5",
-//     // "-keep_class",
-//     // "4",
-//     // "5",
-//     // "-keep_xy",
-//     // ...bbox.map((c) => String(c)),
-//     "-i",
-//     ...files.map((file) => "work/" + path.basename(file)),
-//     // ...files.map((file) => path.resolve("/home/martin/14TB", file)),
-//     "-merged",
-//     "-o",
-//     "work/dsm.tif",
-//   ];
+  p.stdin?.write(new TextEncoder().encode(JSON.stringify(pipeline)));
 
-//   await assureSuccess(Deno.run({ cmd }));
-// }
+  p.stdin?.close();
 
-async function calculate(workdir: string) {
-  console.log("Calculating");
+  await assureSuccess(p);
 
-  await assureSuccess(
-    Deno.run({
-      cmd: [
-        "gdal_calc.py",
-        "--co=NUM_THREADS=ALL_CPUS",
-        "--co=COMPRESS=DEFLATE",
-        "--co=PREDICTOR=2",
-        "--type=Byte",
-        "-A",
-        workdir + "/dsm.tif",
-        "--outfile=" + workdir + "/binary.tif",
-        "--overwrite",
-        "--hideNoData",
-        '--calc="1*(A > -100)"',
-      ],
-    })
-  );
-
-  await assureSuccess(
-    Deno.run({
-      cmd: ["gdal_edit.py", "-a_srs", "epsg:8353", workdir + "/binary.tif"],
-    })
+  console.log(
+    `Done rendering ${index} in ${((Date.now() - t) / 60_000).toFixed(2)}`
   );
 }

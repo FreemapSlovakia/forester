@@ -2,6 +2,37 @@ import { readableStreamFromReader } from "https://deno.land/std@0.171.0/streams/
 import { writableStreamFromWriter } from "https://deno.land/std@0.171.0/streams/writable_stream_from_writer.ts";
 import { assureSuccess } from "./util.ts";
 
+
+
+async function calculate(workdir: string) {
+  console.log("Calculating");
+
+  await assureSuccess(
+    Deno.run({
+      cmd: [
+        "gdal_calc.py",
+        "--co=NUM_THREADS=ALL_CPUS",
+        "--co=COMPRESS=DEFLATE",
+        "--co=PREDICTOR=2",
+        "--type=Byte",
+        "-A",
+        workdir + "/dsm.tif",
+        "--outfile=" + workdir + "/binary.tif",
+        "--overwrite",
+        "--hideNoData",
+        '--calc="1*(A > -100)"',
+      ],
+    })
+  );
+
+  await assureSuccess(
+    Deno.run({
+      cmd: ["gdal_edit.py", "-a_srs", "epsg:8353", workdir + "/binary.tif"],
+    })
+  );
+}
+
+
 console.log("Majority filtering");
 
 await assureSuccess(
