@@ -1,4 +1,5 @@
 import * as path from "https://deno.land/std@0.171.0/path/mod.ts";
+import { format } from "https://deno.land/std@0.171.0/fmt/duration.ts";
 import PQueue from "https://esm.sh/p-queue@7.3.0/";
 import { assureSuccess } from "./util.ts";
 
@@ -227,7 +228,7 @@ async function filter(
   );
 
   console.log(
-    `Done filtering ${index} in ${((Date.now() - t) / 60_000).toFixed(2)}`
+    `Done filtering ${index} in ${format(Date.now() - t, { ignoreZero: true })}`
   );
 }
 
@@ -261,6 +262,6 @@ async function render(index: number, workdir: string, files: string[]) {
   await assureSuccess(p);
 
   console.log(
-    `Done rendering ${index} in ${((Date.now() - t) / 60_000).toFixed(2)}`
+    `Done rendering ${index} in ${format(Date.now() - t, { ignoreZero: true })}`
   );
 }
