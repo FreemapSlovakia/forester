@@ -25,6 +25,8 @@ async function handler(request: Request) {
 
     const mask = searchParams.get("mask");
 
+    const toOsm = searchParams.has("to-osm");
+
     if (!mask || !classifications) {
       return new Response("invalid params", { status: 400 });
     }
@@ -49,7 +51,7 @@ async function handler(request: Request) {
       async pull(controller) {
         try {
           controller.enqueue(
-            await process(workdir, classifications, childProcesses)
+            await process(workdir, classifications, childProcesses, toOsm)
           );
         } finally {
           controller.close();
@@ -78,7 +80,9 @@ async function handler(request: Request) {
     });
 
     return new Response(body, {
-      headers: { "Content-Type": "application/geo+json" },
+      headers: {
+        "Content-Type": toOsm ? "application/xml" : "application/geo+json",
+      },
     });
   } catch (err) {
     console.error(err);
@@ -90,14 +94,18 @@ async function handler(request: Request) {
 async function process(
   workdir: string,
   classifications: number[],
-  childProcesses: Set<Deno.ChildProcess>
+  childProcesses: Set<Deno.ChildProcess>,
+  toOsm: boolean
 ) {
   async function runCommand(
     command: string,
     options?: Deno.CommandOptions,
     childProcessesEx?: Set<Deno.ChildProcess>
   ) {
-    const childProcess = new Deno.Command(command, options).spawn();
+    const childProcess = new Deno.Command(command, {
+      cwd: workdir,
+      ...options,
+    }).spawn();
 
     childProcesses.add(childProcess);
 
@@ -120,7 +128,6 @@ async function process(
     console.log("Checking size");
 
     const commandOutput = await runCommand("ogrinfo", {
-      cwd: workdir,
       args: [
         "-q",
         "-dialect",
@@ -136,7 +143,7 @@ async function process(
 
     const area = Number(/area \(Real\) = ([\d\.]*)/.exec(output)?.[1]);
 
-    if (!area || area > 200_000_000) {
+    if (!area || area > 800_000_000) {
       throw new Error("area too big");
     }
   }
@@ -151,7 +158,6 @@ async function process(
         runCommand(
           "gdalwarp",
           {
-            cwd: workdir,
             args: [
               "-cutline",
               "mask.geojson",
@@ -179,10 +185,9 @@ async function process(
   console.log("Calculating");
 
   await runCommand("gdal_calc.py", {
-    cwd: workdir,
     args: [
       "--co=NUM_THREADS=ALL_CPUS",
-      // "--co=COMPRESS=DEFLATE",
+      // "--co=COMPRESS=DEFLATE", // whitebox_tools can't handle it
       // "--co=PREDICTOR=2",
       "--type=Byte",
       ...classifications.flatMap((classification, i) => [
@@ -200,14 +205,12 @@ async function process(
   console.log("Setting SRS");
 
   await runCommand("gdal_edit.py", {
-    cwd: workdir,
     args: ["-a_srs", "epsg:8353", "binary.tif"],
   });
 
   console.log("Majority filtering");
 
   await runCommand("whitebox_tools", {
-    cwd: workdir,
     args: [
       "-r=MajorityFilter",
       "-v",
@@ -221,14 +224,12 @@ async function process(
   console.log("Polygonizing");
 
   await runCommand("gdal_polygonize.py", {
-    cwd: workdir,
     args: ["mf.tif", "out.shp"],
   });
 
   console.log("Setting SRS");
 
   await runCommand("ogr2ogr", {
-    cwd: workdir,
     args: [
       "-overwrite",
       "-a_srs",
@@ -243,7 +244,6 @@ async function process(
   console.log("Generalizing");
 
   await runCommand("grass", {
-    cwd: workdir,
     args: [
       "--tmp-location",
       "EPSG:8353",
@@ -256,7 +256,6 @@ async function process(
   console.log("Converting to geojson");
 
   await runCommand("ogr2ogr", {
-    cwd: workdir,
     args: [
       "-overwrite",
       "-t_srs",
@@ -270,12 +269,25 @@ async function process(
     console.log("Adding tags");
 
     const commandOutput = await runCommand("jq", {
-      cwd: workdir,
       args: [
         '.features[].properties = {natural: "wood", source: "ÚGKK SR LLS"}',
         "out.geojson",
       ],
       stdout: "piped",
+    });
+
+    if (!toOsm) {
+      return commandOutput.stdout;
+    }
+
+    await Deno.writeFile(workdir + "/result.geojson", commandOutput.stdout);
+  }
+
+  {
+    console.log("Converting to OSM");
+
+    const commandOutput = await runCommand("geojsontoosm", {
+      args: ["result.geojson"],
     });
 
     return commandOutput.stdout;
