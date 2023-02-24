@@ -7,7 +7,7 @@ await load();
 
 const dataDirPath = Deno.env.get("FORESTER_DATA_DIR_PATH");
 
-if (dataDirPath) {
+if (!dataDirPath) {
   console.error("Missing FORESTER_DATA_DIR_PATH env variable");
 
   Deno.exit();
