@@ -58,7 +58,7 @@ async function handler(request: Request) {
 
           clearInterval(iid);
 
-          // await Deno.remove(workdir, { recursive: true });
+          await Deno.remove(workdir, { recursive: true });
         }
       },
 
