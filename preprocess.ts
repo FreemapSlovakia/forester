@@ -1,5 +1,5 @@
-import * as path from "https://deno.land/std@0.171.0/path/mod.ts";
-import { format } from "https://deno.land/std@0.171.0/fmt/duration.ts";
+import * as path from "https://deno.land/std@0.178.0/path/mod.ts";
+import { format } from "https://deno.land/std@0.178.0/fmt/duration.ts";
 import PQueue from "https://esm.sh/p-queue@7.3.0/";
 import { assureSuccess } from "./util.ts";
 

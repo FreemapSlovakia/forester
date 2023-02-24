@@ -1,6 +1,21 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
+import { load } from "https://deno.land/std@0.178.0/dotenv/mod.ts";
+import { serve } from "https://deno.land/std@0.178.0/http/server.ts";
 
-await serve(handler, { port: 8085 });
+const __dirname = new URL('.', import.meta.url).pathname;
+
+await load();
+
+const dataDirPath = Deno.env.get("FORESTER_DATA_DIR_PATH");
+
+if (dataDirPath) {
+  console.error("Missing FORESTER_DATA_DIR_PATH env variable");
+
+  Deno.exit();
+}
+
+const workDirBase = Deno.env.get("FORESTER_WORK_DIR") || "./server-work";
+
+await serve(handler, { port: Number(Deno.env.get("FORESTER_PORT") || "8085") });
 
 async function handler(request: Request) {
   console.log("REQUEST");
@@ -33,7 +48,7 @@ async function handler(request: Request) {
 
     const workdir = await Deno.makeTempDir({
       prefix: "work_",
-      dir: "./server-work",
+      dir: workDirBase,
     });
 
     await Deno.writeTextFile(workdir + "/mask.geojson", mask);
@@ -162,7 +177,7 @@ async function process(
               "-cutline",
               "mask.geojson",
               "-crop_to_cutline",
-              `../../fin2/merged_${classification}.vrt`,
+              `${dataDirPath}/merged_${classification}.vrt`,
               `cut_${classification}.tif`,
             ],
           },
@@ -249,7 +264,7 @@ async function process(
       "EPSG:8353",
       "--exec",
       "sh",
-      "../../grass_batch_job.sh",
+      __dirname + "grass_batch_job.sh",
     ],
   });
 

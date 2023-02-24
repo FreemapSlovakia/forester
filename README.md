@@ -32,5 +32,5 @@ Merge preprodessed files.
 ### The server
 
 ```bash
-deno run --allow-read --allow-write --allow-net --allow-run server.ts
+FORESTER_DATA_DIR_PATH=/path/to/data/from/preprocessing FORESTER_WORK_DIR=./work FORESTER_PORT=8085 deno run --allow-read --allow-write --allow-net --allow-run server.ts
 ```
