@@ -1,33 +1,19 @@
-import { readableStreamFromReader } from "https://deno.land/std@0.171.0/streams/readable_stream_from_reader.ts";
-import { writableStreamFromWriter } from "https://deno.land/std@0.171.0/streams/writable_stream_from_writer.ts";
-import { assureSuccess } from "./util.ts";
+import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
-const server = Deno.listen({ port: 8080 });
+await serve(handler, { port: 8080 });
 
-for await (const conn of server) {
-  serveHttp(conn);
-}
+async function handler(request: Request) {
+  console.log("REQUEST");
 
-async function serveHttp(conn: Deno.Conn) {
-  const httpConn = Deno.serveHttp(conn);
-
-  for await (const requestEvent of httpConn) {
-    const { request } = requestEvent;
-
+  try {
     const url = new URL(request.url);
 
     if (request.method !== "GET") {
-      requestEvent.respondWith(
-        new Response("method not allowed", { status: 405 })
-      );
-
-      continue;
+      return new Response("method not allowed", { status: 405 });
     }
 
     if (url.pathname !== "/") {
-      requestEvent.respondWith(new Response("not found", { status: 404 }));
-
-      continue;
+      return new Response("not found", { status: 404 });
     }
 
     const { searchParams } = url;
@@ -40,9 +26,7 @@ async function serveHttp(conn: Deno.Conn) {
     const mask = searchParams.get("mask");
 
     if (!mask || !classifications) {
-      requestEvent.respondWith(new Response("invalid params", { status: 400 }));
-
-      continue;
+      return new Response("invalid params", { status: 400 });
     }
 
     const workdir = await Deno.makeTempDir({
@@ -50,43 +34,105 @@ async function serveHttp(conn: Deno.Conn) {
       dir: "./server-work",
     });
 
-    try {
-      await Deno.writeTextFile(workdir + "/mask.geojson", mask);
-    } finally {
-      await Deno.remove(workdir, { recursive: true });
-    }
+    await Deno.writeTextFile(workdir + "/mask.geojson", mask);
 
-    await process(workdir, classifications, requestEvent);
+    const childProcesses = new Set<Deno.ChildProcess>();
 
-    // requestEvent.respondWith(new Response("OK"));
+    let iid: number;
+
+    const body = new ReadableStream({
+      start(controller) {
+        iid = setInterval(() => {
+          controller.enqueue(new Uint8Array(0));
+        }, 500);
+      },
+      async pull(controller) {
+        try {
+          controller.enqueue(
+            await process(workdir, classifications, childProcesses)
+          );
+        } finally {
+          controller.close();
+
+          clearInterval(iid);
+
+          await Deno.remove(workdir, { recursive: true });
+        }
+      },
+
+      async cancel() {
+        console.log("CANCEL");
+
+        clearInterval(iid);
+
+        for (const childProcess of childProcesses) {
+          try {
+            childProcess.kill("SIGTERM");
+          } catch {
+            // ignore
+          }
+        }
+
+        await Deno.remove(workdir, { recursive: true });
+      },
+    });
+
+    return new Response(body, {
+      headers: { "Content-Type": "application/geo+json" },
+    });
+  } catch (err) {
+    console.error(err);
+
+    return new Response("internal server error", { status: 500 });
   }
 }
 
 async function process(
   workdir: string,
   classifications: number[],
-  requestEvent: Deno.RequestEvent
+  childProcesses: Set<Deno.ChildProcess>
 ) {
+  async function runCommand(
+    command: string,
+    options?: Deno.CommandOptions,
+    childProcessesEx?: Set<Deno.ChildProcess>
+  ) {
+    const childProcess = new Deno.Command(command, options).spawn();
+
+    childProcesses.add(childProcess);
+
+    childProcessesEx?.add(childProcess);
+
+    const commandOutput = await childProcess.output();
+
+    childProcesses.delete(childProcess);
+
+    childProcessesEx?.delete(childProcess);
+
+    if (!commandOutput.success) {
+      throw new Error(command + " failed: " + commandOutput.code);
+    }
+
+    return commandOutput;
+  }
+
   {
     console.log("Checking size");
 
-    const p = await assureSuccess(
-      Deno.run({
-        cwd: workdir,
-        cmd: [
-          "ogrinfo",
-          "-q",
-          "-dialect",
-          "SQLite",
-          "-sql",
-          "SELECT SUM(ST_Area(st_transform(geometry, 8353))) AS area FROM mask",
-          "mask.geojson",
-        ],
-        stdout: "piped",
-      })
-    );
+    const commandOutput = await runCommand("ogrinfo", {
+      cwd: workdir,
+      args: [
+        "-q",
+        "-dialect",
+        "SQLite",
+        "-sql",
+        "SELECT SUM(ST_Area(st_transform(geometry, 8353))) AS area FROM mask",
+        "mask.geojson",
+      ],
+      stdout: "piped",
+    });
 
-    const output = new TextDecoder().decode(await p.output());
+    const output = new TextDecoder().decode(commandOutput.stdout);
 
     const area = Number(/area \(Real\) = ([\d\.]*)/.exec(output)?.[1]);
 
@@ -97,163 +143,141 @@ async function process(
 
   console.log("Cropping");
 
-  await Promise.all(
-    classifications.map((classification) =>
-      assureSuccess(
-        Deno.run({
-          cwd: workdir,
-          cmd: [
-            "gdalwarp",
-            "-cutline",
-            "mask.geojson",
-            "-crop_to_cutline",
-            `../fin/merged_${classification}.vrt`,
-            `cut_${classification}.tif`,
-          ],
-        })
+  const childProcessesEx = new Set<Deno.ChildProcess>();
+
+  try {
+    await Promise.all(
+      classifications.map((classification) =>
+        runCommand(
+          "gdalwarp",
+          {
+            cwd: workdir,
+            args: [
+              "-cutline",
+              "mask.geojson",
+              "-crop_to_cutline",
+              `../../fin2/merged_${classification}.vrt`,
+              `cut_${classification}.tif`,
+            ],
+          },
+          childProcessesEx
+        )
       )
-    )
-  );
+    );
+  } catch (err) {
+    for (const childProcess of childProcessesEx) {
+      try {
+        childProcess.kill("SIGTERM");
+      } catch {
+        // ignore
+      }
+    }
+
+    throw err;
+  }
 
   console.log("Calculating");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: [
-        "gdal_calc.py",
-        "--co=NUM_THREADS=ALL_CPUS",
-        "--co=COMPRESS=DEFLATE",
-        "--co=PREDICTOR=2",
-        "--type=Byte",
-        ...classifications.flatMap((classification, i) => [
-          "-" + "ABCDEFGH".charAt(i),
-          `cut_${classification}.tif`,
-        ]),
-        "--outfile=binary.tif",
-        "--hideNoData",
-        `--calc="${classifications
-          .map((_classification, i) => `1 * (${"ABCDEFGH".charAt(i)} > 0)`)
-          .join(" + ")}"`,
-      ],
-    })
-  );
+  await runCommand("gdal_calc.py", {
+    cwd: workdir,
+    args: [
+      "--co=NUM_THREADS=ALL_CPUS",
+      // "--co=COMPRESS=DEFLATE",
+      // "--co=PREDICTOR=2",
+      "--type=Byte",
+      ...classifications.flatMap((classification, i) => [
+        "-" + "ABCDEFGH".charAt(i),
+        `cut_${classification}.tif`,
+      ]),
+      "--outfile=binary.tif",
+      "--hideNoData",
+      `--calc="${classifications
+        .map((_classification, i) => `1 * (${"ABCDEFGH".charAt(i)} > 0)`)
+        .join(" + ")}"`,
+    ],
+  });
 
   console.log("Setting SRS");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: ["gdal_edit.py", "-a_srs", "epsg:8353", "binary.tif"],
-    })
-  );
+  await runCommand("gdal_edit.py", {
+    cwd: workdir,
+    args: ["-a_srs", "epsg:8353", "binary.tif"],
+  });
 
   console.log("Majority filtering");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: [
-        "whitebox_tools",
-        "-r=MajorityFilter",
-        "-v",
-        "--wd=.",
-        "-i=binary.tif",
-        "-o=mf.tif",
-        "--filter=19",
-      ],
-    })
-  );
+  await runCommand("whitebox_tools", {
+    cwd: workdir,
+    args: [
+      "-r=MajorityFilter",
+      "-v",
+      "--wd=.",
+      "-i=binary.tif",
+      "-o=mf.tif",
+      "--filter=19",
+    ],
+  });
 
   console.log("Polygonizing");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: ["gdal_polygonize.py", "mf.tif", "out.shp"],
-    })
-  );
+  await runCommand("gdal_polygonize.py", {
+    cwd: workdir,
+    args: ["mf.tif", "out.shp"],
+  });
 
   console.log("Setting SRS");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: [
-        "ogr2ogr",
-        "-overwrite",
-        "-a_srs",
-        "epsg:8353",
-        "-where",
-        '"DN" = 1',
-        "out8353.shp",
-        "out.shp",
-      ],
-    })
-  );
+  await runCommand("ogr2ogr", {
+    cwd: workdir,
+    args: [
+      "-overwrite",
+      "-a_srs",
+      "epsg:8353",
+      "-where",
+      '"DN" = 1',
+      "out8353.shp",
+      "out.shp",
+    ],
+  });
 
   console.log("Generalizing");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: [
-        "grass",
-        "--tmp-location",
-        "EPSG:8353",
-        "--exec",
-        "sh",
-        "../grass_batch_job.sh",
-      ],
-    })
-  );
+  await runCommand("grass", {
+    cwd: workdir,
+    args: [
+      "--tmp-location",
+      "EPSG:8353",
+      "--exec",
+      "sh",
+      "../../grass_batch_job.sh",
+    ],
+  });
 
   console.log("Converting to geojson");
 
-  await assureSuccess(
-    Deno.run({
-      cwd: workdir,
-      cmd: [
-        "ogr2ogr",
-        "-overwrite",
-        "-t_srs",
-        "epsg:4326",
-        "out.geojson",
-        "generalized.gpkg",
-      ],
-    })
-  );
+  await runCommand("ogr2ogr", {
+    cwd: workdir,
+    args: [
+      "-overwrite",
+      "-t_srs",
+      "epsg:4326",
+      "out.geojson",
+      "generalized.gpkg",
+    ],
+  });
 
   {
     console.log("Adding tags");
 
-    const p = Deno.run({
+    const commandOutput = await runCommand("jq", {
       cwd: workdir,
-      cmd: [
-        "jq",
+      args: [
         '.features[].properties = {natural: "wood", source: "ÚGKK SR LLS"}',
         "out.geojson",
       ],
       stdout: "piped",
     });
 
-    // readableStreamFromReader(p.stdout).pipeTo(
-    //   writableStreamFromWriter(
-    //     await Deno.open(workdir + "/result.geojson", {
-    //       read: true,
-    //       write: true,
-    //       create: true,
-    //     })
-    //   )
-    // );
-
-    await Promise.all([
-      requestEvent.respondWith(
-        new Response(readableStreamFromReader(p.stdout), {
-          headers: { "Content-Type": "application/geo+json" },
-        })
-      ),
-      assureSuccess(p),
-    ]);
+    return commandOutput.stdout;
   }
 }

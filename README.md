@@ -31,8 +31,6 @@ Merge preprodessed files.
 
 ### The server
 
-Work in progress.
-
 ```bash
 deno run --allow-read --allow-write --allow-net --allow-run server.ts
 ```
