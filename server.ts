@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 
-await serve(handler, { port: 8080 });
+await serve(handler, { port: 8085 });
 
 async function handler(request: Request) {
   console.log("REQUEST");
@@ -25,7 +25,7 @@ async function handler(request: Request) {
 
     const mask = searchParams.get("mask");
 
-    const toOsm = searchParams.has("to-osm");
+    const toOsm = !!searchParams.get("to-osm");
 
     if (!mask || !classifications) {
       return new Response("invalid params", { status: 400 });
@@ -58,7 +58,7 @@ async function handler(request: Request) {
 
           clearInterval(iid);
 
-          await Deno.remove(workdir, { recursive: true });
+          // await Deno.remove(workdir, { recursive: true });
         }
       },
 
@@ -195,10 +195,10 @@ async function process(
         `cut_${classification}.tif`,
       ]),
       "--outfile=binary.tif",
-      "--hideNoData",
+      "--NoDataValue=2",
       `--calc="${classifications
-        .map((_classification, i) => `1 * (${"ABCDEFGH".charAt(i)} > 0)`)
-        .join(" + ")}"`,
+        .map((_classification, i) => `(${"ABCDEFGH".charAt(i)} > 0)`)
+        .join(" | ")}"`,
     ],
   });
 
@@ -288,6 +288,7 @@ async function process(
 
     const commandOutput = await runCommand("geojsontoosm", {
       args: ["result.geojson"],
+      stdout: "piped",
     });
 
     return commandOutput.stdout;
