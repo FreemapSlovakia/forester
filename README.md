@@ -1,6 +1,6 @@
 # Forester
 
-A tool to trace forests from classified (4, 5) clouds of points.
+A tool to trace areas (forests, water bodies, buildings, ...) from classified clouds of points.
 
 ## Requiremens
 
@@ -31,4 +31,4 @@ Merge preprodessed files.
 
 ### The server
 
-deno run --allow-read --allow-net --allow-run server.ts
+deno run --allow-read --allow-write --allow-net --allow-run server.ts
