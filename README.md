@@ -6,7 +6,6 @@ A tool to trace forests from classified (4, 5) clouds of points.
 
 - Deno
 - PDAL
-- LAStools (just for merging and can be replaced by PDAL which on the other hand takes more RAM)
 - WhiteboxTools
 - GDAL
 - GRASS GIS
