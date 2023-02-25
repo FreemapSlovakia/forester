@@ -27,6 +27,15 @@ Create preprocessed files:
 deno run --allow-read --allow-write --allow-run preprocess.ts
 ```
 
+```bash
+gdalbuildvrt -tap -tr 0.5 0.5 -r cubic merged_3.vrt binary_3-*.tif & \
+gdalbuildvrt -tap -tr 0.5 0.5 -r cubic merged_4.vrt binary_4-*.tif & \
+gdalbuildvrt -tap -tr 0.5 0.5 -r cubic merged_5.vrt binary_5-*.tif & \
+gdalbuildvrt -tap -tr 0.5 0.5 -r cubic merged_6.vrt binary_6-*.tif & \
+gdalbuildvrt -tap -tr 0.5 0.5 -r cubic merged_9.vrt binary_9-*.tif & \
+wait
+```
+
 Merge preprodessed files.
 
 ### The server
