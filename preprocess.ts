@@ -3,6 +3,18 @@ import { format } from "https://deno.land/std@0.178.0/fmt/duration.ts";
 import PQueue from "https://esm.sh/p-queue@7.3.0/";
 import { assureSuccess } from "./util.ts";
 
+// <configuration>
+
+const classifications = [3, 4, 5, 6, 9];
+
+const targetDir = "fin2";
+
+const workdirPrefix = "work";
+
+const concurrency = 16;
+
+// </configuration>
+
 type Meta = {
   filename: string;
   summary: {
@@ -21,8 +33,6 @@ const metas: Meta[] = (await Deno.readTextFile("./lazfiles.meta.jsonl"))
   .trim()
   .split("\n")
   .map((line) => JSON.parse(line));
-
-const classifications = [3, 4, 5, 6, 9];
 
 const bounds = metas.reduce(
   (
@@ -44,15 +54,14 @@ const bounds = metas.reduce(
 
 let i = 0;
 
+// TODO target align pixels - origin and dimension (*TAP)
 const dx = (bounds[2] - bounds[0]) / 160;
 
 const dy = (bounds[3] - bounds[1]) / 80;
 
-const workers = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+const workers = new Array(concurrency).fill(0).map((_, i) => i);
 
-const queue = new PQueue({
-  concurrency: 16,
-});
+const queue = new PQueue({ concurrency });
 
 for (let y = bounds[1]; y < bounds[3]; y += dy) {
   for (let x = bounds[0]; x < bounds[2]; x += dx) {
@@ -101,7 +110,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
 
     // continue;
 
-    const doneFile = `fin2/done-${String(index).padStart(5, "0")}`;
+    const doneFile = targetDir + '/done-' + String(index).padStart(5, "0");
 
     try {
       await Deno.stat(doneFile);
@@ -110,7 +119,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
       // OK
     }
 
-    const bbox = [x, y, x + dx, y + dy];
+    const bbox: BBox = [x, y, x + dx, y + dy];
 
     const files = getFiles(bbox);
 
@@ -124,7 +133,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
       const id = workers.shift();
 
       try {
-        const workdir = "work" + id;
+        const workdir = workdirPrefix + id;
 
         try {
           await Deno.remove(workdir, { recursive: true });
@@ -137,13 +146,13 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
         await filter(index, workdir, files, bbox);
 
         try {
-          await render(index, workdir, files);
+          await render(index, workdir, files, bbox);
 
           await Promise.all(
             classifications.map((c) =>
               Deno.copyFile(
                 workdir + `/binary_${c}.tif`,
-                `fin2/binary_${c}-${String(index).padStart(5, "0")}.tif`
+                `${targetDir}/binary_${c}-${String(index).padStart(5, "0")}.tif`
               ).catch(() => undefined)
             )
           );
@@ -167,7 +176,7 @@ for (let y = bounds[1]; y < bounds[3]; y += dy) {
   }
 }
 
-function getFiles(bbox: number[]) {
+function getFiles(bbox: BBox) {
   const files: string[] = metas
     .filter((meta) => {
       const { minx, miny, maxx, maxy } = meta.summary.bounds;
@@ -190,7 +199,7 @@ async function filter(
   index: number,
   workdir: string,
   files: string[],
-  bbox: number[]
+  bbox: BBox
 ) {
   console.log(`Filtering ${index}`);
 
@@ -232,7 +241,12 @@ async function filter(
   );
 }
 
-async function render(index: number, workdir: string, files: string[]) {
+async function render(
+  index: number,
+  workdir: string,
+  files: string[],
+  _bbox: BBox
+) {
   console.log(`Rendering ${index}`);
 
   const t = Date.now();
@@ -252,6 +266,11 @@ async function render(index: number, workdir: string, files: string[]) {
       output_type: "count",
       data_type: "uint16",
       where: `(Classification == ${c})`,
+      // TODO - together with *TAP
+      // origin_x: bbox[0],
+      // origin_y: bbox[1],
+      // width: bbox[2] - bbox[0],
+      // height: bbox[3] - bbox[1],
     })),
   ];
 
