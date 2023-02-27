@@ -98,9 +98,9 @@ async function handler(request: Request) {
       headers: {
         "Content-Type": toOsm ? "application/xml" : "application/geo+json",
         "Content-Disposition":
-          "attachment; filename=forester_" +
+          "attachment; filename=\"forester_" +
           classifications.join(",") +
-          (toOsm ? ".osm" : ".goejson"),
+          (toOsm ? ".osm" : ".goejson") + '"',
       },
     });
   } catch (err) {
