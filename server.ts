@@ -100,7 +100,7 @@ async function handler(request: Request) {
         "Content-Disposition":
           "attachment; filename=\"forester_" +
           classifications.join(",") +
-          (toOsm ? ".osm" : ".goejson") + '"',
+          (toOsm ? ".osm" : ".geojson") + '"',
       },
     });
   } catch (err) {
