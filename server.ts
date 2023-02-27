@@ -60,7 +60,7 @@ async function handler(request: Request) {
     const body = new ReadableStream({
       start(controller) {
         iid = setInterval(() => {
-          controller.enqueue(new Uint8Array(0));
+          controller.enqueue(new TextEncoder().encode(' '));
         }, 500);
       },
       async pull(controller) {
