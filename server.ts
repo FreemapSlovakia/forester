@@ -1,7 +1,7 @@
 import { load } from "https://deno.land/std@0.178.0/dotenv/mod.ts";
 import { serve } from "https://deno.land/std@0.178.0/http/server.ts";
 
-const __dirname = new URL('.', import.meta.url).pathname;
+const __dirname = new URL(".", import.meta.url).pathname;
 
 await load();
 
@@ -60,7 +60,7 @@ async function handler(request: Request) {
     const body = new ReadableStream({
       start(controller) {
         iid = setInterval(() => {
-          controller.enqueue(new TextEncoder().encode(' '));
+          controller.enqueue(new TextEncoder().encode(" "));
         }, 500);
       },
       async pull(controller) {
@@ -97,6 +97,10 @@ async function handler(request: Request) {
     return new Response(body, {
       headers: {
         "Content-Type": toOsm ? "application/xml" : "application/geo+json",
+        "Content-Disposition":
+          "attachment; filename=forester_" +
+          classifications.join(",") +
+          (toOsm ? ".osm" : ".goejson"),
       },
     });
   } catch (err) {
