@@ -1,5 +1,6 @@
 import { load } from "https://deno.land/std@0.178.0/dotenv/mod.ts";
 import { serve } from "https://deno.land/std@0.178.0/http/server.ts";
+import { geojsonToOsmXml } from "./toOsm.ts";
 
 const __dirname = new URL(".", import.meta.url).pathname;
 
@@ -98,9 +99,10 @@ async function handler(request: Request) {
       headers: {
         "Content-Type": toOsm ? "application/xml" : "application/geo+json",
         "Content-Disposition":
-          "attachment; filename=\"forester_" +
+          'attachment; filename="forester_' +
           classifications.join(",") +
-          (toOsm ? ".osm" : ".geojson") + '"',
+          (toOsm ? ".osm" : ".geojson") +
+          '"',
       },
     });
   } catch (err) {
@@ -284,6 +286,12 @@ async function process(
     ],
   });
 
+  if (toOsm) {
+    return geojsonToOsmXml(
+      JSON.parse(await Deno.readTextFile(workdir + "/out.geojson"))
+    );
+  }
+
   {
     console.log("Adding tags");
 
@@ -292,21 +300,6 @@ async function process(
         '.features[].properties = {natural: "wood", source: "ÚGKK SR LLS"}',
         "out.geojson",
       ],
-      stdout: "piped",
-    });
-
-    if (!toOsm) {
-      return commandOutput.stdout;
-    }
-
-    await Deno.writeFile(workdir + "/result.geojson", commandOutput.stdout);
-  }
-
-  {
-    console.log("Converting to OSM");
-
-    const commandOutput = await runCommand("geojsontoosm", {
-      args: ["result.geojson"],
       stdout: "piped",
     });
 

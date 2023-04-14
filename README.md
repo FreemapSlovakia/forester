@@ -18,7 +18,7 @@ A tool to trace areas (forests, water bodies, buildings, ...) from classified cl
 Create `./lazfiles.meta.jsonl`:
 
 ```bash
-find /home/martin/14TB -name '*_jtsk03_bpv.laz' | parallel "echo {}; pdal info --summary {} | jq -c" > lazfiles.meta.jsonl
+find /home/martin/14TB/ -name '*_jtsk03_bpv.laz' | parallel "echo {}; pdal info --summary {} | jq -c" > lazfiles.meta.jsonl
 ```
 
 Create preprocessed files:
