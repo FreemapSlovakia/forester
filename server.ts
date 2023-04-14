@@ -287,8 +287,10 @@ async function process(
   });
 
   if (toOsm) {
-    return geojsonToOsmXml(
-      JSON.parse(await Deno.readTextFile(workdir + "/out.geojson"))
+    return new TextEncoder().encode(
+      geojsonToOsmXml(
+        JSON.parse(await Deno.readTextFile(workdir + "/out.geojson"))
+      )
     );
   }
 
