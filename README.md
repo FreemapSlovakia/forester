@@ -24,7 +24,7 @@ find /home/martin/14TB/ -name '*_jtsk03_bpv.laz' | parallel "echo {}; pdal info 
 Create preprocessed files:
 
 ```bash
-deno run --allow-read --allow-write --allow-run preprocess.ts
+deno run --allow-read --allow-write --allow-run preprocessing/preprocess.ts
 ```
 
 ```bash
@@ -41,5 +41,5 @@ Merge preprodessed files.
 ### The server
 
 ```bash
-FORESTER_DATA_DIR_PATH=/path/to/data/from/preprocessing FORESTER_WORK_DIR=./work FORESTER_PORT=8085 deno run --allow-read --allow-write --allow-net --allow-run --allow-env server.ts
+FORESTER_DATA_DIR_PATH=/path/to/data/from/preprocessing FORESTER_WORK_DIR=./work FORESTER_PORT=8085 deno run --allow-read --allow-write --allow-net --allow-run --allow-env server/server.ts
 ```
