@@ -24,8 +24,11 @@ async function handler(request: Request) {
   try {
     const url = new URL(request.url);
 
-    if (request.method !== "GET") {
-      return new Response("method not allowed", { status: 405 });
+    if (request.method !== "GET" && request.method !== "HEAD") {
+      return new Response("method not allowed", {
+        status: 405,
+        headers: { Allow: "GET, HEAD" },
+      });
     }
 
     if (url.pathname !== "/") {
@@ -41,10 +44,23 @@ async function handler(request: Request) {
 
     const mask = searchParams.get("mask");
 
-    const toOsm = !!searchParams.get("to-osm");
+    const toOsm = /^(1|true|yes)$/.test(searchParams.get("to-osm") ?? "");
 
     if (!mask || !classifications) {
       return new Response("invalid params", { status: 400 });
+    }
+
+    const headers = new Headers({
+      "Content-Type": toOsm ? "application/xml" : "application/geo+json",
+      "Content-Disposition":
+        'attachment; filename="forester_' +
+        classifications.join(",") +
+        (toOsm ? ".osm" : ".geojson") +
+        '"',
+    });
+
+    if (request.method === "HEAD") {
+      return new Response(null, { headers });
     }
 
     const workdir = await Deno.makeTempDir({
@@ -95,16 +111,7 @@ async function handler(request: Request) {
       },
     });
 
-    return new Response(body, {
-      headers: {
-        "Content-Type": toOsm ? "application/xml" : "application/geo+json",
-        "Content-Disposition":
-          'attachment; filename="forester_' +
-          classifications.join(",") +
-          (toOsm ? ".osm" : ".geojson") +
-          '"',
-      },
-    });
+    return new Response(body, { headers });
   } catch (err) {
     console.error(err);
 
